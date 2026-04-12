@@ -293,19 +293,44 @@ function closeImageModal() {
 }
 
 // --- UI Rendering ---
+// --- Bulk Actions ---
+async function toggleAllCartItems(targetState) {
+    setLoading(true);
+    try {
+        const response = await fetch('/api/cart');
+        const items = await response.json();
+        
+        const promises = [];
+        for (const item of items) {
+            if (item.status === 'in_cart' && item.selected !== targetState) {
+                item.selected = targetState;
+                promises.push(fetch(`/api/cart/${item.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(item)
+                }));
+            }
+        }
+        
+        await Promise.all(promises); // Fire all update requests concurrently
+        await fetchItems();
+    } catch (error) {
+        console.error(error);
+        setLoading(false);
+    }
+}
+
+// --- UI Rendering ---
 function renderList(items) {
     const plannedList = document.getElementById('planned-list');
     const cartList = document.getElementById('incart-list');
-    
-    plannedList.innerHTML = '<h2 class="text-[1.15rem] font-medium text-white mb-1 px-1">Planned Items</h2>';
-    cartList.innerHTML = `
-        <div class="flex justify-between items-center mb-1 px-1 mt-2">
-            <h2 class="text-[1.15rem] font-medium text-white">In Cart</h2>
-        </div>
-    `;
 
     let total = 0;
     let cartCount = 0;
+    let selectedCartCount = 0;
+    
+    let plannedHTML = '<h2 class="text-[1.15rem] font-medium text-white mb-1 px-1">Planned Items</h2>';
+    let cartHTML = '';
 
     items.forEach(item => {
         const itemDataStr = encodeURIComponent(JSON.stringify(item));
@@ -313,7 +338,7 @@ function renderList(items) {
         const formattedPrice = (item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
         if (item.status === 'planned') {
-            plannedList.innerHTML += `
+            plannedHTML += `
                 <div class="bg-[#1C1C1E] p-4 rounded-[24px] flex items-center justify-between transition-all hover:bg-[#252528]">
                     <div class="flex-grow cursor-pointer" onclick="openEditModal('${itemDataStr}', false)">
                         <p class="font-semibold text-lg text-white leading-tight tracking-wide">${item.name}</p>
@@ -327,9 +352,12 @@ function renderList(items) {
         } else {
             // In Cart
             cartCount++;
-            if (item.selected) total += ((item.price || 0) * item.qty);
+            if (item.selected) {
+                selectedCartCount++;
+                total += ((item.price || 0) * item.qty);
+            }
 
-            cartList.innerHTML += `
+            cartHTML += `
                 <div class="bg-[#1C1C1E] p-4 rounded-[24px] flex items-center gap-4 transition-all hover:bg-[#252528]">
                     <div class="flex-shrink-0 flex items-center justify-center z-10">
                         <input type="checkbox" class="w-[22px] h-[22px] accent-[#A7E4C5] rounded-md cursor-pointer border-0 bg-[#2C2C2E]" ${item.selected ? 'checked' : ''} 
@@ -345,6 +373,20 @@ function renderList(items) {
             `;
         }
     });
+
+    // Dynamic header state for Cart
+    const allSelected = cartCount > 0 && selectedCartCount === cartCount;
+    const headerActionText = allSelected ? "Deselect All" : "Select All";
+    const headerActionParam = allSelected ? "false" : "true";
+
+    cartList.innerHTML = `
+        <div class="flex justify-between items-center mb-1 px-1 mt-2">
+            <h2 class="text-[1.15rem] font-medium text-white">In Cart</h2>
+            ${cartCount > 0 ? `<button onclick="toggleAllCartItems(${headerActionParam})" class="text-[#A7E4C5] text-sm font-semibold hover:opacity-80 transition-opacity tracking-wide">${headerActionText}</button>` : ''}
+        </div>
+    ` + cartHTML;
+    
+    plannedList.innerHTML = plannedHTML;
 
     // Empty States
     if (plannedList.children.length === 1) plannedList.innerHTML += '<p class="text-[#8E8E93] italic px-2 text-sm mt-2">No planned items yet.</p>';
