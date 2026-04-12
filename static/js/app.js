@@ -189,16 +189,16 @@ function openEditModal(itemDataStr, isTransition = false) {
     const modalTitle = document.getElementById('editModalTitle');
     const saveBtn = document.getElementById('editSaveBtn');
 
+    // Always ensure the name is editable, even when transitioning
+    nameInput.readOnly = false;
+    nameInput.classList.remove('opacity-50', 'cursor-not-allowed');
+
     if (isTransition) {
-        // Lock the name and change UI for transition state
-        nameInput.readOnly = true;
-        nameInput.classList.add('opacity-50', 'cursor-not-allowed');
+        // Change UI titles for transition state, but keep the input unlocked
         modalTitle.innerText = "Add Details to Cart";
         saveBtn.innerText = "Confirm to Cart";
     } else {
         // Standard edit mode
-        nameInput.readOnly = false;
-        nameInput.classList.remove('opacity-50', 'cursor-not-allowed');
         modalTitle.innerText = "Edit Item";
         saveBtn.innerText = "Save Changes";
     }
