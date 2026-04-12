@@ -10,3 +10,17 @@ input[type=number]::-webkit-outer-spin-button {
     -webkit-appearance: none; 
     margin: 0; 
 }
+
+/* Hide scrollbars for a clean, native app feel in the Main View */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+
+/* Adds safe padding at the bottom for modern iOS/Android phones with swipe bars */
+.pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+}
