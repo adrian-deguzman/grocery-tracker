@@ -1,5 +1,5 @@
 import uuid
-from models.schemas import Item
+from models.schemas import Item, StatusEnum
 
 # Simulated in-memory database
 db_cart = {}
@@ -15,6 +15,12 @@ def add_item(item: Item):
 def update_item(item_id: str, item: Item):
     if item_id in db_cart:
         db_cart[item_id] = item
+        return True
+    return False
+
+def update_item_status(item_id: str, status: StatusEnum):
+    if item_id in db_cart:
+        db_cart[item_id].status = status
         return True
     return False
 
