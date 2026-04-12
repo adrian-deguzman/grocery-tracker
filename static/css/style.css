@@ -1,0 +1,12 @@
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #000000; /* Deep black background */
+    color: #FFFFFF;
+}
+
+/* Hide number input arrows for cleaner UI */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none; 
+    margin: 0; 
+}
