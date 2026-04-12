@@ -358,7 +358,7 @@ function renderList(items) {
             }
 
             cartHTML += `
-                <div class="bg-[#1C1C1E] p-4 rounded-[24px] flex items-center gap-4 transition-all hover:bg-[#252528]">
+                <div class="cart-item-row bg-[#1C1C1E] p-4 rounded-[24px] flex items-center gap-4 transition-all hover:bg-[#252528]" data-name="${item.name.toLowerCase().replace(/"/g, '&quot;')}">
                     <div class="flex-shrink-0 flex items-center justify-center z-10">
                         <input type="checkbox" class="w-[22px] h-[22px] accent-[#A7E4C5] rounded-md cursor-pointer border-0 bg-[#2C2C2E]" ${item.selected ? 'checked' : ''} 
                                onchange="toggleItem('${item.id}', '${itemDataStr}')">
@@ -379,10 +379,24 @@ function renderList(items) {
     const headerActionText = allSelected ? "Deselect All" : "Select All";
     const headerActionParam = allSelected ? "false" : "true";
 
+    // --- Capture search state before re-render ---
+    const searchInputEl = document.getElementById('cartSearchInput');
+    const currentSearchQuery = searchInputEl ? searchInputEl.value : "";
+    const searchBarEl = document.getElementById('cartSearchBar');
+    const isSearchOpen = searchBarEl && !searchBarEl.classList.contains('hidden');
+
     cartList.innerHTML = `
-        <div class="flex justify-between items-center mb-1 px-1 mt-2">
+        <div class="flex justify-between items-center mb-2 px-1 mt-2">
             <h2 class="text-[1.15rem] font-medium text-white">In Cart</h2>
-            ${cartCount > 0 ? `<button onclick="toggleAllCartItems(${headerActionParam})" class="text-[#A7E4C5] text-sm font-semibold hover:opacity-80 transition-opacity tracking-wide">${headerActionText}</button>` : ''}
+            <div class="flex items-center gap-4">
+                <button onclick="document.getElementById('cartSearchBar').classList.toggle('hidden'); document.getElementById('cartSearchInput').focus();" class="text-[#8E8E93] hover:text-white transition-colors active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+                ${cartCount > 0 ? `<button onclick="toggleAllCartItems(${headerActionParam})" class="text-[#A7E4C5] text-sm font-semibold hover:opacity-80 transition-opacity tracking-wide">${headerActionText}</button>` : ''}
+            </div>
+        </div>
+        <div id="cartSearchBar" class="${isSearchOpen ? '' : 'hidden'} w-full mb-3 transition-all">
+            <input type="text" id="cartSearchInput" oninput="filterCartItems()" value="${currentSearchQuery.replace(/"/g, '&quot;')}" placeholder="Search items in cart..." class="w-full bg-[#1C1C1E] text-white placeholder-[#8E8E93] px-4 py-2.5 rounded-[16px] focus:outline-none focus:ring-2 focus:ring-[#A7E4C5] text-sm border border-[#2C2C2E] shadow-inner">
         </div>
     ` + cartHTML;
     
@@ -391,6 +405,9 @@ function renderList(items) {
     // Empty States
     if (plannedList.children.length === 1) plannedList.innerHTML += '<p class="text-[#8E8E93] italic px-2 text-sm mt-2">No planned items yet.</p>';
     if (cartCount === 0) cartList.innerHTML += '<p class="text-[#8E8E93] italic px-2 text-sm mt-2">Your cart is empty.</p>';
+
+    // Re-apply filter immediately if there's an active query
+    if (currentSearchQuery) filterCartItems();
 
     // Update UI Badges & Totals
     document.getElementById('grand-total').innerText = total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -410,3 +427,19 @@ const toBase64 = file => new Promise((resolve, reject) => {
     reader.onload = () => resolve(reader.result);
     reader.onerror = error => reject(error);
 });
+
+// --- Live Local Search Filter ---
+function filterCartItems() {
+    const query = document.getElementById('cartSearchInput').value.toLowerCase();
+    const rows = document.querySelectorAll('.cart-item-row');
+    
+    rows.forEach(row => {
+        if (row.getAttribute('data-name').includes(query)) {
+            row.classList.remove('hidden');
+            row.classList.add('flex'); // Restore original flex layout
+        } else {
+            row.classList.add('hidden');
+            row.classList.remove('flex');
+        }
+    });
+}
