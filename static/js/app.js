@@ -1,27 +1,52 @@
 // --- Globals ---
 let currentEditingSelectedState = true;
-let currentEditingImage = null; // Keeps track of existing image in edit mode
+let currentEditingImage = null; 
+let currentEditingStatus = 'in_cart';
+let isTransitioningStatus = false;
 
 window.onload = fetchItems;
+
+// --- Tab Navigation Logic ---
+function switchTab(tabName) {
+    const viewToBuy = document.getElementById('view-to-buy');
+    const viewCart = document.getElementById('view-cart');
+    const navToBuy = document.getElementById('nav-to-buy');
+    const navCart = document.getElementById('nav-cart');
+
+    if (tabName === 'to-buy') {
+        viewToBuy.classList.remove('hidden');
+        viewCart.classList.add('hidden');
+        navToBuy.classList.replace('text-[#8E8E93]', 'text-[#B3A8FF]');
+        navCart.classList.replace('text-[#B3A8FF]', 'text-[#8E8E93]');
+    } else if (tabName === 'cart') {
+        viewToBuy.classList.add('hidden');
+        viewCart.classList.remove('hidden');
+        navCart.classList.replace('text-[#8E8E93]', 'text-[#B3A8FF]');
+        navToBuy.classList.replace('text-[#B3A8FF]', 'text-[#8E8E93]');
+    }
+}
 
 // --- Loading UI State ---
 function setLoading(isLoading) {
     const spinner = document.getElementById('loading-spinner');
     const totalContainer = document.getElementById('total-container');
-    const cartList = document.getElementById('cart-list');
+    const viewToBuy = document.getElementById('view-to-buy');
+    const viewCart = document.getElementById('view-cart');
     
     if (isLoading) {
         spinner.classList.remove('hidden');
         totalContainer.classList.add('opacity-50');
-        // Dim the list and disable clicks to prevent double-submissions
-        if(cartList) cartList.classList.add('opacity-50', 'pointer-events-none', 'transition-opacity', 'duration-300');
+        viewToBuy.classList.add('opacity-50', 'pointer-events-none', 'transition-opacity');
+        viewCart.classList.add('opacity-50', 'pointer-events-none', 'transition-opacity');
     } else {
         spinner.classList.add('hidden');
         totalContainer.classList.remove('opacity-50');
-        if(cartList) cartList.classList.remove('opacity-50', 'pointer-events-none');
+        viewToBuy.classList.remove('opacity-50', 'pointer-events-none');
+        viewCart.classList.remove('opacity-50', 'pointer-events-none');
     }
 }
 
+// --- API Calls ---
 async function fetchItems() {
     setLoading(true);
     try {
@@ -33,6 +58,32 @@ async function fetchItems() {
     }
 }
 
+// Quick Add Bar (Triggered by pressing Enter)
+async function handleQuickAdd(event) {
+    if (event.key === 'Enter') {
+        const input = document.getElementById('quickAddInput');
+        const name = input.value.trim();
+        if (!name) return;
+
+        setLoading(true);
+        try {
+            // Defaults to planned with null price/image
+            const payload = { name, price: null, qty: 1, image: null, selected: true, status: 'planned' };
+            await fetch('/api/cart', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            input.value = '';
+            await fetchItems();
+        } catch (error) {
+            console.error(error);
+            setLoading(false);
+        }
+    }
+}
+
+// Add Unplanned Item (Triggered by FAB)
 async function addItem() {
     const name = document.getElementById('itemName').value;
     const price = parseFloat(document.getElementById('itemPrice').value) || 0;
@@ -48,7 +99,8 @@ async function addItem() {
             imageB64 = await toBase64(imageFile);
         }
 
-        const payload = { name, price, qty, image: imageB64, selected: true };
+        // Unplanned items go straight to the cart
+        const payload = { name, price, qty, image: imageB64, selected: true, status: 'in_cart' };
 
         await fetch('/api/cart', {
             method: 'POST',
@@ -56,9 +108,7 @@ async function addItem() {
             body: JSON.stringify(payload)
         });
 
-        document.getElementById('itemName').value = '';
-        document.getElementById('itemPrice').value = '';
-        document.getElementById('itemImage').value = '';
+        closeAddModal();
         await fetchItems();
     } catch (error) {
         console.error(error);
@@ -84,28 +134,74 @@ async function toggleItem(id, itemDataStr) {
 }
 
 async function deleteItem(id) {
-    setLoading(true);
-    try {
-        await fetch(`/api/cart/${id}`, { method: 'DELETE' });
-        await fetchItems();
-    } catch (error) {
-        console.error(error);
-        setLoading(false);
-    }
+    setTimeout(async () => {
+        setLoading(true);
+        try {
+            await fetch(`/api/cart/${id}`, { method: 'DELETE' });
+            await fetchItems();
+        } catch (error) {
+            console.error(error);
+            setLoading(false);
+        }
+    }, 100);
 }
 
-// --- Edit Modal Logic (With Animations) ---
-function openEditModal(itemDataStr) {
+// --- Modals Logic ---
+
+// ADD Modal
+function openAddModal() {
+    document.getElementById('itemName').value = '';
+    document.getElementById('itemPrice').value = '';
+    document.getElementById('itemQty').value = '1';
+    document.getElementById('itemImage').value = '';
+    
+    const modal = document.getElementById('addModal');
+    const inner = document.getElementById('addModalInner');
+    modal.classList.remove('opacity-0', 'pointer-events-none');
+    inner.classList.remove('scale-95');
+    inner.classList.add('scale-100');
+}
+
+function closeAddModal() {
+    const modal = document.getElementById('addModal');
+    const inner = document.getElementById('addModalInner');
+    modal.classList.add('opacity-0', 'pointer-events-none');
+    inner.classList.remove('scale-100');
+    inner.classList.add('scale-95');
+}
+
+// EDIT / TRANSITION Modal
+function openEditModal(itemDataStr, isTransition = false) {
     const item = JSON.parse(decodeURIComponent(itemDataStr));
     
     document.getElementById('editItemId').value = item.id;
     document.getElementById('editItemName').value = item.name;
-    document.getElementById('editItemPrice').value = item.price;
+    document.getElementById('editItemPrice').value = item.price || '';
     document.getElementById('editItemQty').value = item.qty;
     document.getElementById('editItemImage').value = ''; 
     
     currentEditingSelectedState = item.selected;
     currentEditingImage = item.image; 
+    currentEditingStatus = item.status;
+    isTransitioningStatus = isTransition;
+    
+    const nameInput = document.getElementById('editItemName');
+    const modalTitle = document.getElementById('editModalTitle');
+    const saveBtn = document.getElementById('editSaveBtn');
+
+    if (isTransition) {
+        // Lock the name and change UI for transition state
+        nameInput.readOnly = true;
+        nameInput.classList.add('opacity-50', 'cursor-not-allowed');
+        modalTitle.innerText = "Add Details to Cart";
+        saveBtn.innerText = "Confirm to Cart";
+    } else {
+        // Standard edit mode
+        nameInput.readOnly = false;
+        nameInput.classList.remove('opacity-50', 'cursor-not-allowed');
+        modalTitle.innerText = "Edit Item";
+        saveBtn.innerText = "Save Changes";
+    }
     
     const previewImg = document.getElementById('editImagePreview');
     if (item.image) {
@@ -116,7 +212,6 @@ function openEditModal(itemDataStr) {
         previewImg.classList.add('hidden');
     }
     
-    // Trigger Fade & Scale Animation In
     const modal = document.getElementById('editModal');
     const inner = document.getElementById('editModalInner');
     modal.classList.remove('opacity-0', 'pointer-events-none');
@@ -125,7 +220,6 @@ function openEditModal(itemDataStr) {
 }
 
 function closeEditModal() {
-    // Trigger Fade & Scale Animation Out
     const modal = document.getElementById('editModal');
     const inner = document.getElementById('editModalInner');
     modal.classList.add('opacity-0', 'pointer-events-none');
@@ -149,13 +243,22 @@ async function saveEdit() {
             imageB64 = await toBase64(imageFile); 
         }
 
-        const payload = { name, price, qty, image: imageB64, selected: currentEditingSelectedState };
-
+        // Standard PUT update
+        const payload = { name, price, qty, image: imageB64, selected: currentEditingSelectedState, status: currentEditingStatus };
         await fetch(`/api/cart/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+
+        // If transitioning from Planned to Cart, follow up with the PATCH requirement
+        if (isTransitioningStatus) {
+            await fetch(`/api/cart/${id}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'in_cart' })
+            });
+        }
 
         closeEditModal();
         await fetchItems();
@@ -165,18 +268,15 @@ async function saveEdit() {
     }
 }
 
-// --- Image Modal Logic (With Animations) ---
+// IMAGE Modal
 function openImageModal(imgSrc, itemName) {
     const imgEl = document.getElementById('fullScreenImage');
     imgEl.src = imgSrc;
-    
     const downloadBtn = document.getElementById('downloadImageBtn');
     downloadBtn.href = imgSrc;
-    
     const safeName = itemName.replace(/\s+/g, '_');
     downloadBtn.download = `${safeName}.png`;
     
-    // Trigger Fade & Scale Animation In
     const modal = document.getElementById('imageModal');
     modal.classList.remove('opacity-0', 'pointer-events-none');
     imgEl.classList.remove('scale-95');
@@ -184,61 +284,82 @@ function openImageModal(imgSrc, itemName) {
 }
 
 function closeImageModal() {
-    // Trigger Fade & Scale Animation Out
     const modal = document.getElementById('imageModal');
     const imgEl = document.getElementById('fullScreenImage');
-    
     modal.classList.add('opacity-0', 'pointer-events-none');
     imgEl.classList.remove('scale-100');
     imgEl.classList.add('scale-95');
-    
-    // Wait for the fade-out animation (300ms) before clearing the image source to prevent flicker
     setTimeout(() => { imgEl.src = ""; }, 300);
 }
 
 // --- UI Rendering ---
 function renderList(items) {
-    const listDiv = document.getElementById('cart-list');
-    listDiv.innerHTML = '';
-    let total = 0;
+    const plannedList = document.getElementById('planned-list');
+    const cartList = document.getElementById('incart-list');
+    
+    plannedList.innerHTML = '<h2 class="text-[1.15rem] font-medium text-white mb-1 px-1">Planned Items</h2>';
+    cartList.innerHTML = `
+        <div class="flex justify-between items-center mb-1 px-1 mt-2">
+            <h2 class="text-[1.15rem] font-medium text-white">In Cart</h2>
+        </div>
+    `;
 
-    if (items.length === 0) {
-        listDiv.innerHTML = '<p class="text-[#8E8E93] italic px-2">Your list is currently empty.</p>';
-    }
+    let total = 0;
+    let cartCount = 0;
 
     items.forEach(item => {
-        if (item.selected) {
-            total += (item.price * item.qty);
-        }
-
-        const formattedPrice = item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        
-        // Encode object so we can pass it securely inside HTML strings
         const itemDataStr = encodeURIComponent(JSON.stringify(item));
         const safeImageName = item.name.replace(/'/g, "\\'");
+        const formattedPrice = (item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-        const itemHTML = `
-            <div class="bg-[#1C1C1E] p-4 rounded-[24px] flex items-center gap-4 transition-all hover:bg-[#252528]">
-                
-                <div class="flex-shrink-0 flex items-center justify-center z-10">
-                    <input type="checkbox" class="w-[22px] h-[22px] accent-[#A7E4C5] rounded-md cursor-pointer border-0 bg-[#2C2C2E]" ${item.selected ? 'checked' : ''} 
-                           onchange="toggleItem('${item.id}', '${itemDataStr}')">
+        if (item.status === 'planned') {
+            plannedList.innerHTML += `
+                <div class="bg-[#1C1C1E] p-4 rounded-[24px] flex items-center justify-between transition-all hover:bg-[#252528]">
+                    <div class="flex-grow cursor-pointer" onclick="openEditModal('${itemDataStr}', false)">
+                        <p class="font-semibold text-lg text-white leading-tight tracking-wide">${item.name}</p>
+                        <p class="text-[#8E8E93] text-[13px] font-medium mt-1 tracking-wide">Qty: ${item.qty}</p>
+                    </div>
+                    <button onclick="openEditModal('${itemDataStr}', true)" class="flex-shrink-0 ml-3 bg-[#B3A8FF] text-black text-sm font-semibold px-4 py-2.5 rounded-[14px] active:scale-95 transition-transform shadow-lg z-10">
+                        Add to Cart
+                    </button>
                 </div>
-                
-                <div class="flex-grow cursor-pointer" onclick="openEditModal('${itemDataStr}')">
-                    <p class="font-semibold text-lg text-white leading-tight tracking-wide">${item.name}</p>
-                    <p class="text-[#8E8E93] text-[13px] font-medium mt-1 tracking-wide">${item.qty} x ₱${formattedPrice}</p>
+            `;
+        } else {
+            // In Cart
+            cartCount++;
+            if (item.selected) total += ((item.price || 0) * item.qty);
+
+            cartList.innerHTML += `
+                <div class="bg-[#1C1C1E] p-4 rounded-[24px] flex items-center gap-4 transition-all hover:bg-[#252528]">
+                    <div class="flex-shrink-0 flex items-center justify-center z-10">
+                        <input type="checkbox" class="w-[22px] h-[22px] accent-[#A7E4C5] rounded-md cursor-pointer border-0 bg-[#2C2C2E]" ${item.selected ? 'checked' : ''} 
+                               onchange="toggleItem('${item.id}', '${itemDataStr}')">
+                    </div>
+                    <div class="flex-grow cursor-pointer" onclick="openEditModal('${itemDataStr}', false)">
+                        <p class="font-semibold text-lg text-white leading-tight tracking-wide">${item.name}</p>
+                        <p class="text-[#8E8E93] text-[13px] font-medium mt-1 tracking-wide">${item.qty} x ₱${formattedPrice}</p>
+                    </div>
+                    ${item.image ? `<img src="${item.image}" onclick="openImageModal('${item.image}', '${safeImageName}')" class="w-[50px] h-[50px] object-cover rounded-[14px] bg-[#2C2C2E] cursor-pointer hover:opacity-80 transition-opacity z-10">` : ''}
+                    <button onclick='deleteItem("${item.id}")' class="text-[#8E8E93] hover:text-red-400 active:scale-90 transition-all text-xl font-bold pl-2 pr-1 z-10">✕</button>
                 </div>
-                
-                ${item.image ? `<img src="${item.image}" onclick="openImageModal('${item.image}', '${safeImageName}')" class="w-[50px] h-[50px] object-cover rounded-[14px] bg-[#2C2C2E] cursor-pointer hover:opacity-80 transition-opacity z-10">` : ''}
-                
-                <button onclick='deleteItem("${item.id}")' class="text-[#8E8E93] hover:text-red-400 active:scale-90 transition-all text-xl font-bold pl-2 pr-1 z-10">✕</button>
-            </div>
-        `;
-        listDiv.innerHTML += itemHTML;
+            `;
+        }
     });
 
+    // Empty States
+    if (plannedList.children.length === 1) plannedList.innerHTML += '<p class="text-[#8E8E93] italic px-2 text-sm mt-2">No planned items yet.</p>';
+    if (cartCount === 0) cartList.innerHTML += '<p class="text-[#8E8E93] italic px-2 text-sm mt-2">Your cart is empty.</p>';
+
+    // Update UI Badges & Totals
     document.getElementById('grand-total').innerText = total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    
+    const badge = document.getElementById('cart-badge');
+    if (cartCount > 0) {
+        badge.innerText = cartCount;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
 }
 
 const toBase64 = file => new Promise((resolve, reject) => {
