@@ -4,10 +4,33 @@ let currentEditingImage = null; // Keeps track of existing image in edit mode
 
 window.onload = fetchItems;
 
+// --- Loading UI State ---
+function setLoading(isLoading) {
+    const spinner = document.getElementById('loading-spinner');
+    const totalContainer = document.getElementById('total-container');
+    const cartList = document.getElementById('cart-list');
+    
+    if (isLoading) {
+        spinner.classList.remove('hidden');
+        totalContainer.classList.add('opacity-50');
+        // Dim the list and disable clicks to prevent double-submissions
+        if(cartList) cartList.classList.add('opacity-50', 'pointer-events-none', 'transition-opacity', 'duration-300');
+    } else {
+        spinner.classList.add('hidden');
+        totalContainer.classList.remove('opacity-50');
+        if(cartList) cartList.classList.remove('opacity-50', 'pointer-events-none');
+    }
+}
+
 async function fetchItems() {
-    const response = await fetch('/api/cart');
-    const items = await response.json();
-    renderList(items);
+    setLoading(true);
+    try {
+        const response = await fetch('/api/cart');
+        const items = await response.json();
+        renderList(items);
+    } finally {
+        setLoading(false);
+    }
 }
 
 async function addItem() {
@@ -18,45 +41,60 @@ async function addItem() {
 
     if (!name) return alert("Need a name!");
 
-    let imageB64 = null;
-    if (imageFile) {
-        imageB64 = await toBase64(imageFile);
+    setLoading(true);
+    try {
+        let imageB64 = null;
+        if (imageFile) {
+            imageB64 = await toBase64(imageFile);
+        }
+
+        const payload = { name, price, qty, image: imageB64, selected: true };
+
+        await fetch('/api/cart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        document.getElementById('itemName').value = '';
+        document.getElementById('itemPrice').value = '';
+        document.getElementById('itemImage').value = '';
+        await fetchItems();
+    } catch (error) {
+        console.error(error);
+        setLoading(false);
     }
-
-    const payload = { name, price, qty, image: imageB64, selected: true };
-
-    await fetch('/api/cart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-
-    document.getElementById('itemName').value = '';
-    document.getElementById('itemPrice').value = '';
-    document.getElementById('itemImage').value = '';
-    fetchItems();
 }
 
 async function toggleItem(id, itemDataStr) {
-    const itemData = JSON.parse(decodeURIComponent(itemDataStr));
-    itemData.selected = !itemData.selected;
-    await fetch(`/api/cart/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(itemData)
-    });
-    fetchItems();
+    setLoading(true);
+    try {
+        const itemData = JSON.parse(decodeURIComponent(itemDataStr));
+        itemData.selected = !itemData.selected;
+        await fetch(`/api/cart/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(itemData)
+        });
+        await fetchItems();
+    } catch (error) {
+        console.error(error);
+        setLoading(false);
+    }
 }
 
 async function deleteItem(id) {
-    // Add slight delay to allow scale animation to play before deleting
-    setTimeout(async () => {
+    setLoading(true);
+    try {
         await fetch(`/api/cart/${id}`, { method: 'DELETE' });
-        fetchItems();
-    }, 100);
+        await fetchItems();
+    } catch (error) {
+        console.error(error);
+        setLoading(false);
+    }
 }
 
-// --- Edit Modal Logic ---
+// --- Edit Modal Logic (With Animations) ---
 function openEditModal(itemDataStr) {
     const item = JSON.parse(decodeURIComponent(itemDataStr));
     
@@ -64,12 +102,11 @@ function openEditModal(itemDataStr) {
     document.getElementById('editItemName').value = item.name;
     document.getElementById('editItemPrice').value = item.price;
     document.getElementById('editItemQty').value = item.qty;
-    document.getElementById('editItemImage').value = ''; // Reset file input
+    document.getElementById('editItemImage').value = ''; 
     
     currentEditingSelectedState = item.selected;
-    currentEditingImage = item.image; // Keep existing image in memory
+    currentEditingImage = item.image; 
     
-    // Show the previous image preview if it exists
     const previewImg = document.getElementById('editImagePreview');
     if (item.image) {
         previewImg.src = item.image;
@@ -79,11 +116,21 @@ function openEditModal(itemDataStr) {
         previewImg.classList.add('hidden');
     }
     
-    document.getElementById('editModal').classList.remove('hidden');
+    // Trigger Fade & Scale Animation In
+    const modal = document.getElementById('editModal');
+    const inner = document.getElementById('editModalInner');
+    modal.classList.remove('opacity-0', 'pointer-events-none');
+    inner.classList.remove('scale-95');
+    inner.classList.add('scale-100');
 }
 
 function closeEditModal() {
-    document.getElementById('editModal').classList.add('hidden');
+    // Trigger Fade & Scale Animation Out
+    const modal = document.getElementById('editModal');
+    const inner = document.getElementById('editModalInner');
+    modal.classList.add('opacity-0', 'pointer-events-none');
+    inner.classList.remove('scale-100');
+    inner.classList.add('scale-95');
 }
 
 async function saveEdit() {
@@ -95,40 +142,58 @@ async function saveEdit() {
 
     if (!name) return alert("Need a name!");
 
-    let imageB64 = currentEditingImage; // Default to old image
-    if (imageFile) {
-        imageB64 = await toBase64(imageFile); // Overwrite if new uploaded
+    setLoading(true);
+    try {
+        let imageB64 = currentEditingImage; 
+        if (imageFile) {
+            imageB64 = await toBase64(imageFile); 
+        }
+
+        const payload = { name, price, qty, image: imageB64, selected: currentEditingSelectedState };
+
+        await fetch(`/api/cart/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        closeEditModal();
+        await fetchItems();
+    } catch(error) {
+        console.error(error);
+        setLoading(false);
     }
-
-    const payload = { name, price, qty, image: imageB64, selected: currentEditingSelectedState };
-
-    await fetch(`/api/cart/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-
-    closeEditModal();
-    fetchItems();
 }
 
-// --- Image Modal Logic ---
+// --- Image Modal Logic (With Animations) ---
 function openImageModal(imgSrc, itemName) {
-    document.getElementById('fullScreenImage').src = imgSrc;
+    const imgEl = document.getElementById('fullScreenImage');
+    imgEl.src = imgSrc;
     
     const downloadBtn = document.getElementById('downloadImageBtn');
     downloadBtn.href = imgSrc;
     
-    // Format name: "Item Name" -> "Item_Name.png"
     const safeName = itemName.replace(/\s+/g, '_');
     downloadBtn.download = `${safeName}.png`;
     
-    document.getElementById('imageModal').classList.remove('hidden');
+    // Trigger Fade & Scale Animation In
+    const modal = document.getElementById('imageModal');
+    modal.classList.remove('opacity-0', 'pointer-events-none');
+    imgEl.classList.remove('scale-95');
+    imgEl.classList.add('scale-100');
 }
 
 function closeImageModal() {
-    document.getElementById('imageModal').classList.add('hidden');
-    document.getElementById('fullScreenImage').src = "";
+    // Trigger Fade & Scale Animation Out
+    const modal = document.getElementById('imageModal');
+    const imgEl = document.getElementById('fullScreenImage');
+    
+    modal.classList.add('opacity-0', 'pointer-events-none');
+    imgEl.classList.remove('scale-100');
+    imgEl.classList.add('scale-95');
+    
+    // Wait for the fade-out animation (300ms) before clearing the image source to prevent flicker
+    setTimeout(() => { imgEl.src = ""; }, 300);
 }
 
 // --- UI Rendering ---
